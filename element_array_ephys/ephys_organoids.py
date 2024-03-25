@@ -618,6 +618,13 @@ class Clustering(dj.Imported):
         """This will be implemented via si_spike_sorting tables."""
         pass
 
+    @staticmethod
+    def download_results(key):
+        output_dir = (ClusteringTask & key).fetch1("clustering_output_dir")
+        downloaded_dir = _linking_module.download_results(output_dir)
+
+        return downloaded_dir
+
 
 @schema
 class Curation(dj.Manual):
