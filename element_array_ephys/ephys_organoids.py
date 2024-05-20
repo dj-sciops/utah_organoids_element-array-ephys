@@ -971,7 +971,7 @@ class WaveformSet(dj.Imported):
                 [
                     {
                         **unit,
-                        **channel2electrode_map[int(c)],
+                        **channel2electrode_map[str(c)],
                         "waveform_mean": mean_waveforms[unit["unit"] - 1, :, c_idx],
                     }
                     for c_idx, c in enumerate(we.channel_ids)
