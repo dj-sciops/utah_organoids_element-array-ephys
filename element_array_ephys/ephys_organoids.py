@@ -920,7 +920,7 @@ class WaveformSet(dj.Imported):
         channel2electrode_map = electrode_query.fetch(as_dict=True)
         channel2electrode_map: dict[int, dict] = {
             chn.pop("channel_idx"): chn for chn in channel2electrode_map
-        }  # e.g., {0: {'organoid_id': 'O09',
+        }  # e.g., {0: {'electrode_config_hash': UUID('699af5e0-...','probe_type':'A1x32...','electrode':27}
 
         waveform_dir = output_dir / sorter_name / "waveform"
         if not waveform_dir.exists():
@@ -950,9 +950,17 @@ class WaveformSet(dj.Imported):
             unit_waveforms = we.get_template(
                 unit_id=unit["unit"], mode="average", force_dense=True
             )  # (sample x channel)
-            peak_chn_idx = list(we.channel_ids).index(
-                unit_id_to_peak_channel_map[unit["unit"]][0]
-            )
+
+            peak_channel = str(unit_id_to_peak_channel_map[unit["unit"]][0])
+
+            if peak_channel in we.channel_ids:
+                peak_chn_idx = np.where(we.channel_ids == peak_channel)[0][0]
+            else:
+                logger.warning(
+                    f"Warning: Peak channel {peak_channel} for unit {unit['unit']} not found in the list of channel IDs (`we.channel_ids`)."
+                )
+                continue
+
             unit_peak_waveform.append(
                 {
                     **unit,
@@ -963,10 +971,10 @@ class WaveformSet(dj.Imported):
                 [
                     {
                         **unit,
-                        **channel2electrode_map[c],
+                        **channel2electrode_map[int(c)],
                         "waveform_mean": mean_waveforms[unit["unit"] - 1, :, c_idx],
                     }
-                    for c_idx, c in enumerate(channel2electrode_map)
+                    for c_idx, c in enumerate(we.channel_ids)
                 ]
             )
 
