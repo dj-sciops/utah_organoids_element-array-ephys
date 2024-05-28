@@ -1,21 +1,19 @@
 """
-The following DataJoint pipeline implements the sequence of steps in the spike-sorting routine featured in the "spikeinterface" pipeline.
-Spikeinterface was developed by Alessio Buccino, Samuel Garcia, Cole Hurwitz, Jeremy Magland, and Matthias Hennig (https://github.com/SpikeInterface)
+The following DataJoint pipeline implements the sequence of steps in the spike-sorting routine featured in the "spikeinterface" pipeline. Spikeinterface was developed by Alessio Buccino, Samuel Garcia, Cole Hurwitz, Jeremy Magland, and Matthias Hennig (https://github.com/SpikeInterface)
 """
 
 from datetime import datetime
 
 import datajoint as dj
-import numpy as np
 import pandas as pd
 import spikeinterface as si
-from element_interface.utils import find_full_path
+from element_array_ephys import probe, readers
+from element_interface.utils import find_full_path, memoized_result
 from spikeinterface import exporters, postprocessing, qualitymetrics, sorters
 
-from .. import probe, readers
 from . import si_preprocessing
 
-logger = dj.logger
+log = dj.logger
 
 schema = dj.schema()
 
@@ -44,6 +42,7 @@ def activate(
         create_tables=create_tables,
         add_objects=ephys.__dict__,
     )
+    ephys.Clustering.key_source -= PreProcessing.key_source.proj()
 
 
 SI_SORTERS = [s.replace("_", ".") for s in si.sorters.sorter_dict.keys()]
@@ -82,10 +81,9 @@ class PreProcessing(dj.Imported):
         sorter_name = clustering_method.replace(".", "_")
 
         for required_key in (
-            "SI_SORTING_PARAMS",
             "SI_PREPROCESSING_METHOD",
-            "SI_WAVEFORM_EXTRACTION_PARAMS",
-            "SI_QUALITY_METRICS_PARAMS",
+            "SI_SORTING_PARAMS",
+            "SI_POSTPROCESSING_PARAMS",
         ):
             if required_key not in params:
                 raise ValueError(
@@ -205,7 +203,7 @@ class PreProcessing(dj.Imported):
 
         si_preproc_func = getattr(si_preprocessing, params["SI_PREPROCESSING_METHOD"])
         si_recording = si_preproc_func(si_recording)
-        si_recording.dump_to_pickle(file_path=recording_file)
+        si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         self.insert1(
             {
@@ -240,25 +238,33 @@ class SIClustering(dj.Imported):
         output_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
         sorter_name = clustering_method.replace(".", "_")
         recording_file = output_dir / sorter_name / "recording" / "si_recording.pkl"
-        si_recording: si.BaseRecording = si.load_extractor(recording_file)
+        si_recording: si.BaseRecording = si.load_extractor(
+            recording_file, base_folder=output_dir
+        )
+
+        sorting_params = params["SI_SORTING_PARAMS"]
+        sorting_output_dir = output_dir / sorter_name / "spike_sorting"
 
         # Run sorting
-        # Sorting performed in a dedicated docker environment if the sorter is not built in the spikeinterface package.
-        si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
-            sorter_name=sorter_name,
-            recording=si_recording,
-            output_folder=output_dir / sorter_name / "spike_sorting",
-            remove_existing_folder=True,
-            verbose=True,
-            docker_image=sorter_name not in si.sorters.installed_sorters(),
-            **params.get("SI_SORTING_PARAMS", {}),
+        @memoized_result(
+            uniqueness_dict=sorting_params,
+            output_directory=sorting_output_dir,
         )
+        def _run_sorter():
+            # Sorting performed in a dedicated docker environment if the sorter is not built in the spikeinterface package.
+            si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
+                sorter_name=sorter_name,
+                recording=si_recording,
+                output_folder=sorting_output_dir,
+                remove_existing_folder=True,
+                verbose=True,
+                docker_image=sorter_name not in si.sorters.installed_sorters(),
+                **sorting_params,
+            )
 
-        # Save sorting object.
-        sorting_save_path = (
-            output_dir / sorter_name / "spike_sorting" / "si_sorting.pkl"
-        )
-        si_sorting.dump_to_pickle(sorting_save_path)
+            # Save sorting object
+            sorting_save_path = sorting_output_dir / "si_sorting.pkl"
+            si_sorting.dump_to_pickle(sorting_save_path, relative_to=output_dir)
 
         self.insert1(
             {
@@ -292,81 +298,69 @@ class PostProcessing(dj.Imported):
         ).fetch1("clustering_method", "clustering_output_dir", "params")
         output_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
         sorter_name = clustering_method.replace(".", "_")
+        output_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
 
         recording_file = output_dir / sorter_name / "recording" / "si_recording.pkl"
         sorting_file = output_dir / sorter_name / "spike_sorting" / "si_sorting.pkl"
 
-        si_recording: si.BaseRecording = si.load_extractor(recording_file)
-        si_sorting: si.sorters.BaseSorter = si.load_extractor(sorting_file)
-
-        # Extract waveforms
-        we: si.WaveformExtractor = si.extract_waveforms(
-            si_recording,
-            si_sorting,
-            folder=output_dir
-            / sorter_name
-            / "waveform",  # The folder where waveforms are cached
-            overwrite=True,
-            allow_unfiltered=True,
-            **params.get("SI_WAVEFORM_EXTRACTION_PARAMS", {}),
-            **params.get("SI_JOB_KWARGS", {"n_jobs": -1, "chunk_size": 30000}),
+        si_recording: si.BaseRecording = si.load_extractor(
+            recording_file, base_folder=output_dir
+        )
+        si_sorting: si.sorters.BaseSorter = si.load_extractor(
+            sorting_file, base_folder=output_dir
         )
 
-        # Calculate Cluster and Waveform Metrics
+        postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        # To provide waveform_principal_component
-        _ = si.postprocessing.compute_principal_components(
-            waveform_extractor=we, **params.get("SI_QUALITY_METRICS_PARAMS", None)
+        job_kwargs = postprocessing_params.get(
+            "job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"}
         )
 
-        # To estimate the location of each spike in the sorting output.
-        # The drift metrics require the `spike_locations` waveform extension.
-        _ = si.postprocessing.compute_spike_locations(waveform_extractor=we)
+        analyzer_output_dir = output_dir / sorter_name / "sorting_analyzer"
 
-        # The `sd_ratio` metric requires the `spike_amplitudes` waveform extension.
-        # It is highly recommended before calculating amplitude-based quality metrics.
-        _ = si.postprocessing.compute_spike_amplitudes(waveform_extractor=we)
-
-        # To compute correlograms for spike trains.
-        _ = si.postprocessing.compute_correlograms(we)
-
-        metric_names = si.qualitymetrics.get_quality_metric_list()
-        metric_names.extend(si.qualitymetrics.get_quality_pca_metric_list())
-
-        # To compute commonly used cluster quality metrics.
-        qc_metrics = si.qualitymetrics.compute_quality_metrics(
-            waveform_extractor=we,
-            metric_names=metric_names,
+        @memoized_result(
+            uniqueness_dict=postprocessing_params,
+            output_directory=analyzer_output_dir,
         )
+        def _sorting_analyzer_compute():
+            # Sorting Analyzer
+            sorting_analyzer = si.create_sorting_analyzer(
+                sorting=si_sorting,
+                recording=si_recording,
+                format="binary_folder",
+                folder=analyzer_output_dir,
+                sparse=True,
+                overwrite=True,
+                **job_kwargs,
+            )
 
-        # To compute commonly used waveform/template metrics.
-        template_metric_names = si.postprocessing.get_template_metric_names()
-        template_metric_names.extend(["amplitude", "duration"])
+            # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
+            # each extension is parameterized by params specified in extensions_params dictionary (skip if not specified)
+            extensions_params = postprocessing_params.get("extensions", {})
+            extensions_to_compute = {
+                ext_name: extensions_params[ext_name]
+                for ext_name in sorting_analyzer.get_computable_extensions()
+                if ext_name in extensions_params
+            }
 
-        template_metrics = si.postprocessing.compute_template_metrics(
-            waveform_extractor=we,
-            include_multi_channel_metrics=True,
-            metric_names=template_metric_names,
-        )
+            sorting_analyzer.compute(extensions_to_compute, **job_kwargs)
 
-        # Save the output (metrics.csv to the output dir)
-        metrics = pd.DataFrame()
-        metrics = pd.concat([qc_metrics, template_metrics], axis=1)
+            # Save to phy format
+            if postprocessing_params.get("export_to_phy", False):
+                si.exporters.export_to_phy(
+                    sorting_analyzer=sorting_analyzer,
+                    output_folder=analyzer_output_dir / "phy",
+                    **job_kwargs,
+                )
+            # Generate spike interface report
+            if postprocessing_params.get("export_report", True):
+                si.exporters.export_report(
+                    sorting_analyzer=sorting_analyzer,
+                    output_folder=analyzer_output_dir / "spikeinterface_report",
+                    **job_kwargs,
+                )
 
-        # Save metrics.csv to the output dir
-        metrics_output_dir = output_dir / sorter_name / "metrics"
-        metrics_output_dir.mkdir(parents=True, exist_ok=True)
-        metrics.to_csv(metrics_output_dir / "metrics.csv")
-
-        # Save to phy format
-        si.exporters.export_to_phy(
-            waveform_extractor=we, output_folder=output_dir / sorter_name / "phy"
-        )
-        # Generate spike interface report
-        si.exporters.export_report(
-            waveform_extractor=we,
-            output_folder=output_dir / sorter_name / "spikeinterface_report",
-        )
+        _sorting_analyzer_compute()
 
         self.insert1(
             {
