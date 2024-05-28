@@ -6,6 +6,8 @@ from datetime import datetime
 
 import datajoint as dj
 import pandas as pd
+import numpy as np
+
 import spikeinterface as si
 from element_array_ephys import probe, readers
 from element_interface.utils import find_full_path, memoized_result
@@ -63,6 +65,7 @@ class PreProcessing(dj.Imported):
     def key_source(self):
         return (
             ephys.ClusteringTask * ephys.ClusteringParamSet
+            & ephys.EphysSessionInfo
             & {"task_mode": "trigger"}
             & f"clustering_method in {tuple(SI_SORTERS)}"
         ) - ephys.Clustering
