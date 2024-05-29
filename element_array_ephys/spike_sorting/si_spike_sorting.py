@@ -117,7 +117,7 @@ class PreProcessing(dj.Imported):
         number_of_electrodes = len(electrode_query)
         probe_info["used_electrodes"] = (
             probe_info["used_electrodes"]
-            if probe_info["used_electrodes"] is not None
+            if probe_info["used_electrodes"] is not None and len(probe_info["used_electrodes"])
             else list(range(number_of_electrodes))
         )
         unused_electrodes = [
