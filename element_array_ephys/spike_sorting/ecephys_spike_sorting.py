@@ -31,7 +31,7 @@ from element_array_ephys.readers import (
     kilosort_triggering,
 )
 
-logger = dj.logger
+log = dj.logger
 
 schema = dj.schema()
 

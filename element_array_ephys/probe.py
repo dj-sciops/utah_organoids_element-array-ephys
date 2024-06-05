@@ -3,6 +3,7 @@ from __future__ import annotations
 import datajoint as dj
 
 from .readers import probe_geometry
+from .readers.probe_geometry import build_electrode_layouts
 
 schema = dj.schema()
 

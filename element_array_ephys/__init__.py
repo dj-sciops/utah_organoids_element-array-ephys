@@ -1,1 +1,1 @@
-from . import ephys_organoids as ephys
+from . import ephys_no_curation as ephys
