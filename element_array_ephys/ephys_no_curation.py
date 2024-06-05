@@ -866,7 +866,9 @@ class WaveformSet(dj.Imported):
                     )
                     unit_peak_waveform = {
                         **unit,
-                        "peak_electrode_waveform": unit_waveforms[:, unit_peak_channel[unit["unit"]]],
+                        "peak_electrode_waveform": unit_waveforms[
+                            :, unit_peak_channel[unit["unit"]]
+                        ],
                     }
 
                     unit_electrode_waveforms = [

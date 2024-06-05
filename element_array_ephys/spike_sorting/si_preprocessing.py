@@ -40,7 +40,7 @@ def IBLdestriping_modified(recording):
 def organoid_preprocessing(recording):
     """Preprocessing pipeline for organoid data."""
     recording = si.preprocessing.bandpass_filter(
-        recording=recording, freq_min=300, freq_max=6000
+        recording=recording, freq_min=300, freq_max=4500
     )
     recording = si.preprocessing.common_reference(
         recording=recording, operator="median"
