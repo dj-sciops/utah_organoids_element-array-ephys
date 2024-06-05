@@ -951,15 +951,9 @@ class WaveformSet(dj.Imported):
                 unit_id=unit["unit"], mode="average", force_dense=True
             )  # (sample x channel)
 
-            peak_channel = str(unit_id_to_peak_channel_map[unit["unit"]][0])
-
-            if peak_channel in we.channel_ids:
-                peak_chn_idx = np.where(we.channel_ids == peak_channel)[0][0]
-            else:
-                logger.warning(
-                    f"Warning: Peak channel {peak_channel} for unit {unit['unit']} not found in the list of channel IDs (`we.channel_ids`)."
-                )
-                continue
+            peak_chn_idx = list(we.channel_ids).index(
+                unit_id_to_peak_channel_map[unit["unit"]][0]
+            )
 
             unit_peak_waveform.append(
                 {
@@ -971,10 +965,10 @@ class WaveformSet(dj.Imported):
                 [
                     {
                         **unit,
-                        **channel2electrode_map[str(c)],
+                        **channel2electrode_map[c],
                         "waveform_mean": mean_waveforms[unit["unit"] - 1, :, c_idx],
                     }
-                    for c_idx, c in enumerate(we.channel_ids)
+                    for c_idx, c in enumerate(channel2electrode_map)
                 ]
             )
 
