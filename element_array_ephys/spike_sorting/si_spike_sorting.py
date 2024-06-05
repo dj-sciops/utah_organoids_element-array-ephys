@@ -117,7 +117,8 @@ class PreProcessing(dj.Imported):
         number_of_electrodes = len(electrode_query)
         probe_info["used_electrodes"] = (
             probe_info["used_electrodes"]
-            if probe_info["used_electrodes"] is not None and len(probe_info["used_electrodes"])
+            if probe_info["used_electrodes"] is not None
+            and len(probe_info["used_electrodes"])
             else list(range(number_of_electrodes))
         )
         unused_electrodes = [
@@ -187,8 +188,10 @@ class PreProcessing(dj.Imported):
 
         # Account for additional electrodes being removed
         if unused_electrodes:
-            chn_ids_to_remove = [f"{probe_info['port_id']}-{electrodes_df.channel_idx.iloc[elec]:03d}"
-                                 for elec in unused_electrodes]
+            chn_ids_to_remove = [
+                f"{probe_info['port_id']}-{electrodes_df.channel_idx.iloc[elec]:03d}"
+                for elec in unused_electrodes
+            ]
         else:
             chn_ids_to_remove = []
 
