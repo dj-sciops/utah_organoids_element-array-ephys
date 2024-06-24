@@ -23,7 +23,7 @@ The follow pipeline features three tables:
 import datajoint as dj
 from decimal import Decimal
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from element_interface.utils import find_full_path
 from element_array_ephys.readers import (
@@ -90,7 +90,7 @@ class KilosortPreProcessing(dj.Imported):
 
     def make(self, key):
         """Triggers or imports clustering analysis."""
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
 
         task_mode, output_dir = (ephys.ClusteringTask & key).fetch1(
             "task_mode", "clustering_output_dir"
@@ -159,7 +159,7 @@ class KilosortPreProcessing(dj.Imported):
                 "params": params,
                 "execution_time": execution_time,
                 "execution_duration": (
-                    datetime.utcnow() - execution_time
+                    datetime.now(timezone.utc) - execution_time
                 ).total_seconds()
                 / 3600,
             }
@@ -178,7 +178,7 @@ class KilosortClustering(dj.Imported):
     """
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
 
         output_dir = (ephys.ClusteringTask & key).fetch1("clustering_output_dir")
         kilosort_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
@@ -224,7 +224,7 @@ class KilosortClustering(dj.Imported):
                 **key,
                 "execution_time": execution_time,
                 "execution_duration": (
-                    datetime.utcnow() - execution_time
+                    datetime.now(timezone.utc) - execution_time
                 ).total_seconds()
                 / 3600,
             }
@@ -244,7 +244,7 @@ class KilosortPostProcessing(dj.Imported):
     """
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
 
         output_dir = (ephys.ClusteringTask & key).fetch1("clustering_output_dir")
         kilosort_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
@@ -304,7 +304,7 @@ class KilosortPostProcessing(dj.Imported):
                 "modules_status": modules_status,
                 "execution_time": execution_time,
                 "execution_duration": (
-                    datetime.utcnow() - execution_time
+                    datetime.now(timezone.utc) - execution_time
                 ).total_seconds()
                 / 3600,
             }
@@ -312,5 +312,6 @@ class KilosortPostProcessing(dj.Imported):
 
         # all finished, insert this `key` into ephys.Clustering
         ephys.Clustering.insert1(
-            {**key, "clustering_time": datetime.utcnow()}, allow_direct_insert=True
+            {**key, "clustering_time": datetime.now(timezone.utc)},
+            allow_direct_insert=True,
         )
