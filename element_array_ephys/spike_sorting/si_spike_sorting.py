@@ -2,7 +2,7 @@
 The following DataJoint pipeline implements the sequence of steps in the spike-sorting routine featured in the "spikeinterface" pipeline. Spikeinterface was developed by Alessio Buccino, Samuel Garcia, Cole Hurwitz, Jeremy Magland, and Matthias Hennig (https://github.com/SpikeInterface)
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import datajoint as dj
 import pandas as pd
@@ -72,7 +72,7 @@ class PreProcessing(dj.Imported):
 
     def make(self, key):
         """Triggers or imports clustering analysis."""
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
 
         # Get clustering method and output directory.
         clustering_method, output_dir, params = (
@@ -209,7 +209,7 @@ class PreProcessing(dj.Imported):
                 **key,
                 "execution_time": execution_time,
                 "execution_duration": (
-                    datetime.utcnow() - execution_time
+                    datetime.now(timezone.utc) - execution_time
                 ).total_seconds()
                 / 3600,
             }
@@ -228,7 +228,7 @@ class SIClustering(dj.Imported):
     """
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
 
         # Load recording object.
         clustering_method, output_dir, params = (
@@ -272,7 +272,7 @@ class SIClustering(dj.Imported):
                 **key,
                 "execution_time": execution_time,
                 "execution_duration": (
-                    datetime.utcnow() - execution_time
+                    datetime.now(timezone.utc) - execution_time
                 ).total_seconds()
                 / 3600,
             }
@@ -291,7 +291,7 @@ class PostProcessing(dj.Imported):
     """
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
 
         # Load recording & sorting object.
         clustering_method, output_dir, params = (
@@ -368,7 +368,7 @@ class PostProcessing(dj.Imported):
                 **key,
                 "execution_time": execution_time,
                 "execution_duration": (
-                    datetime.utcnow() - execution_time
+                    datetime.now(timezone.utc) - execution_time
                 ).total_seconds()
                 / 3600,
             }
@@ -376,5 +376,6 @@ class PostProcessing(dj.Imported):
 
         # Once finished, insert this `key` into ephys.Clustering
         ephys.Clustering.insert1(
-            {**key, "clustering_time": datetime.utcnow()}, allow_direct_insert=True
+            {**key, "clustering_time": datetime.now(timezone.utc)},
+            allow_direct_insert=True,
         )

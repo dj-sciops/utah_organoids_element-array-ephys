@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import scipy.io
@@ -258,7 +258,7 @@ class SGLXKilosortPipeline:
                 + module_output_json
             )
 
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
             self._update_module_status(
                 {
                     module: {
@@ -270,7 +270,7 @@ class SGLXKilosortPipeline:
             )
             with open(module_logfile, "a") as f:
                 subprocess.check_call(command.split(" "), stdout=f)
-            completion_time = datetime.utcnow()
+            completion_time = datetime.now(timezone.utc)
             self._update_module_status(
                 {
                     module: {
@@ -560,7 +560,7 @@ class OpenEphysKilosortPipeline:
                 module_output_json,
             ]
 
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
             self._update_module_status(
                 {
                     module: {
@@ -572,7 +572,7 @@ class OpenEphysKilosortPipeline:
             )
             with open(module_logfile, "a") as f:
                 subprocess.check_call(command, stdout=f)
-            completion_time = datetime.utcnow()
+            completion_time = datetime.now(timezone.utc)
             self._update_module_status(
                 {
                     module: {
