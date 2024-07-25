@@ -163,7 +163,7 @@ class EphysSession(dj.Manual):
     start_time                  : datetime
     end_time                    : datetime
     ---
-    session_type                : enum("lfp", "spike_sorting", "both")
+    session_type                : enum("lfp", "spike_sorting", "both", "test")
     """
 
 
