@@ -246,8 +246,11 @@ class LFP(dj.Imported):
     @property
     def key_source(self):
         return (
-            EphysSession & EphysSessionInfo & EphysSessionProbe
-        ) - "session_type='spike_sorting'"
+            EphysSession
+            & EphysSessionInfo
+            & EphysSessionProbe
+            & 'session_type IN ("lfp", "both")'
+        )
 
     def make(self, key):
         TARGET_SAMPLING_RATE = 2500  # Hz
@@ -532,7 +535,7 @@ class ClusteringTask(dj.Manual):
 
     @property
     def key_source(self):
-        return EphysSession - "session_type='lfp'"
+        return EphysSession & 'session_type IN ("spike_sorting", "both")'
 
     @classmethod
     def infer_output_dir(cls, key, relative=False, mkdir=False) -> pathlib.Path:
@@ -619,7 +622,7 @@ class Clustering(dj.Imported):
     """
 
     def make(self, key):
-        """This will be implemented via si_spike_sorting tables."""
+        """This will be implemented via `ephys_sorter` schema with `si_spike_sorting` tables."""
         pass
 
 
