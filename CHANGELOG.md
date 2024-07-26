@@ -3,7 +3,11 @@
 Observes [Semantic Versioning](https://semver.org/spec/v2.0.0.html) standard and
  [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) convention.
 
-## [0.4.0] - 2024-06-25
+## [0.4.2] - 2024-07-26
+
++ Fix - `ephys_no_curation` key_source restriction more specific to `session_type`
+
+## [0.4.1] - 2024-06-25
 
 + Fix - all occurrences of `datetime.utcnow()` to `datetime.now(timezone.utc)` due to deprecation.
 
