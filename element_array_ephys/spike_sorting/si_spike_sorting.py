@@ -11,7 +11,7 @@ import numpy as np
 import spikeinterface as si
 from element_array_ephys import probe, readers
 from element_interface.utils import find_full_path, memoized_result
-from spikeinterface import exporters, postprocessing, qualitymetrics, sorters
+from spikeinterface import exporters, extractors, sorters
 
 from . import si_preprocessing
 
@@ -254,7 +254,7 @@ class SIClustering(dj.Imported):
             si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
                 sorter_name=sorter_name,
                 recording=si_recording,
-                output_folder=sorting_output_dir,
+                folder=sorting_output_dir,
                 remove_existing_folder=True,
                 verbose=True,
                 docker_image=sorter_name not in si.sorters.installed_sorters(),
@@ -331,7 +331,6 @@ class PostProcessing(dj.Imported):
                 folder=analyzer_output_dir,
                 sparse=True,
                 overwrite=True,
-                **job_kwargs,
             )
 
             # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
