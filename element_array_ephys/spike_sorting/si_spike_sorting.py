@@ -11,7 +11,7 @@ import numpy as np
 import spikeinterface as si
 from element_array_ephys import probe, readers
 from element_interface.utils import find_full_path, memoized_result
-from spikeinterface import exporters, postprocessing, qualitymetrics, sorters
+from spikeinterface import exporters, extractors, sorters
 
 from . import si_preprocessing
 
