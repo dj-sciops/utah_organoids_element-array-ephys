@@ -763,19 +763,9 @@ class CuratedClustering(dj.Imported):
                         "spike_depths": spike_depths,
                     }
                 )
-        elif (
-            not si_sorting_analyzer_dir.exists()
-            and (output_dir / sorter_name / "spikeinterface_report").exists()
-        ):
-            # Corresponds to a version of spikeinterface == 0.100.* since `sorting_analyzer` was introduced in version 0.101.*
-            raise NotImplementedError(
-                "Old version of SpikeInterface (== 0.100.*) not supported."
-            )
-        else:
-            # read from kilosort outputs
-            raise NotImplementedError(
-                "Functionality for reading from kilosort outputs not implemented yet."
-            )
+
+        else:  # read from kilosort outputs
+            raise NotImplementedError
 
         self.insert1(key)
         self.Unit.insert(units, ignore_extra_fields=True)
