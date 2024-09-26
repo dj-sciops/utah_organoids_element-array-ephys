@@ -50,6 +50,6 @@ setup(
         ],
         "nwb": ["dandi", "neuroconv[ecephys]", "pynwb"],
         "tests": ["pre-commit", "pytest", "pytest-cov"],
-        "spikingcircus": ["hdbscan"],
+        "spykingcircus": ["hdbscan"],
     },
 )
