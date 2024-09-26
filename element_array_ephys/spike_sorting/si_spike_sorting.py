@@ -64,8 +64,9 @@ class PreProcessing(dj.Imported):
     @property
     def key_source(self):
         return (
-            ephys.ClusteringTask * ephys.ClusteringParamSet * ephys.EphysSession
-            & 'session_type IN ("spike_sorting", "both")'
+            ephys.ClusteringTask * ephys.ClusteringParamSet
+            & ephys.EphysSessionInfo
+            & {"task_mode": "trigger"}
             & f"clustering_method in {tuple(SI_SORTERS)}"
         ) - ephys.Clustering
 
