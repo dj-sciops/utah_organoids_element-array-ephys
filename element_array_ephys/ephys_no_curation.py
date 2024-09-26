@@ -763,6 +763,7 @@ class CuratedClustering(dj.Imported):
                         "spike_depths": spike_depths,
                     }
                 )
+
         else:  # read from kilosort outputs
             raise NotImplementedError
 
