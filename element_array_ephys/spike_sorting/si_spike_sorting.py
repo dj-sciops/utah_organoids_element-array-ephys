@@ -406,7 +406,7 @@ class SIExport(dj.Computed):
             return PostProcessing
 
     def make(self, key):
-        # Load recording & sorting object
+        # Load analyzer output directory.
         clustering_method, output_dir, params = (
             ephys.ClusteringTask * ephys.ClusteringParamSet & key
         ).fetch1("clustering_method", "clustering_output_dir", "params")
@@ -414,7 +414,7 @@ class SIExport(dj.Computed):
         sorter_name = clustering_method.replace(".", "_")
         analyzer_output_dir = output_dir / sorter_name / "sorting_analyzer"
 
-        # Insert result files
+        # Insert spikeinterface report files.
         for report_dirname in ("spikeinterface_report", "phy"):
             self.File.insert(
                 [
