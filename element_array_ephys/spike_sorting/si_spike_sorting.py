@@ -2,7 +2,7 @@
 The following DataJoint pipeline implements the sequence of steps in the spike-sorting routine featured in the "spikeinterface" pipeline. Spikeinterface was developed by Alessio Buccino, Samuel Garcia, Cole Hurwitz, Jeremy Magland, and Matthias Hennig (https://github.com/SpikeInterface)
 """
 
-from datetime import datetime, timezone
+from datetime import timedelta, datetime, timezone
 
 import datajoint as dj
 import pandas as pd
@@ -378,3 +378,53 @@ class PostProcessing(dj.Imported):
             {**key, "clustering_time": datetime.now(timezone.utc)},
             allow_direct_insert=True,
         )
+
+
+@schema
+class SIExport(dj.Computed):
+    """A SpikeInterface export report"""
+
+    definition = """
+    -> PostProcessing
+    """
+
+    class File(dj.Part):
+        definition = """
+        -> master
+        file_name: varchar(255)
+        ---
+        file: filepath@ephys-processed
+        """
+
+    @property
+    def key_source(self):
+        params = (PostProcessing * ephys.ClusteringParamSet).fetch1("params")
+        postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
+        # Check if export_report or export_to_phy is True
+        if postprocessing_params.get("export_report") is False:
+            return []
+        else:
+            return PostProcessing
+
+    def make(self, key):
+        # Load recording & sorting object
+        clustering_method, output_dir, params = (
+            ephys.ClusteringTask * ephys.ClusteringParamSet & key
+        ).fetch1("clustering_method", "clustering_output_dir", "params")
+        output_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
+        sorter_name = clustering_method.replace(".", "_")
+        analyzer_output_dir = output_dir / sorter_name / "sorting_analyzer"
+
+        # Insert result files
+        for report_dirname in ("spikeinterface_report", "phy"):
+            self.File.insert(
+                [
+                    {
+                        **key,
+                        "file_name": f.relative_to(analyzer_output_dir).as_posix(),
+                        "file": f,
+                    }
+                    for f in (analyzer_output_dir / report_dirname).rglob("*")
+                    if f.is_file()
+                ]
+            )
