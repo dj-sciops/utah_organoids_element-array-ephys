@@ -400,7 +400,6 @@ class SIExport(dj.Computed):
     def key_source(self):
         params = (PostProcessing * ephys.ClusteringParamSet).fetch1("params")
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
-        # Check if export_report or export_to_phy is True
         if postprocessing_params.get("export_report") is False:
             return []
         else:
