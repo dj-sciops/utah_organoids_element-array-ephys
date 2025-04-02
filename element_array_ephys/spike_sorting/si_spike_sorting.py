@@ -344,22 +344,6 @@ class PostProcessing(dj.Imported):
 
             sorting_analyzer.compute(extensions_to_compute, **job_kwargs)
 
-            # Save to phy format
-            if postprocessing_params.get("export_to_phy", False):
-                si.exporters.export_to_phy(
-                    sorting_analyzer=sorting_analyzer,
-                    output_folder=analyzer_output_dir / "phy",
-                    use_relative_path=True,
-                    **job_kwargs,
-                )
-            # Generate spike interface report
-            if postprocessing_params.get("export_report", True):
-                si.exporters.export_report(
-                    sorting_analyzer=sorting_analyzer,
-                    output_folder=analyzer_output_dir / "spikeinterface_report",
-                    **job_kwargs,
-                )
-
         _sorting_analyzer_compute()
 
         self.insert1(
