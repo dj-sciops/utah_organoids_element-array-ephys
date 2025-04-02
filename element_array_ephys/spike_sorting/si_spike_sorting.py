@@ -2,7 +2,7 @@
 The following DataJoint pipeline implements the sequence of steps in the spike-sorting routine featured in the "spikeinterface" pipeline. Spikeinterface was developed by Alessio Buccino, Samuel Garcia, Cole Hurwitz, Jeremy Magland, and Matthias Hennig (https://github.com/SpikeInterface)
 """
 
-from datetime import datetime, timezone
+from datetime import timedelta, datetime, timezone
 
 import datajoint as dj
 import pandas as pd
@@ -344,22 +344,6 @@ class PostProcessing(dj.Imported):
 
             sorting_analyzer.compute(extensions_to_compute, **job_kwargs)
 
-            # Save to phy format
-            if postprocessing_params.get("export_to_phy", False):
-                si.exporters.export_to_phy(
-                    sorting_analyzer=sorting_analyzer,
-                    output_folder=analyzer_output_dir / "phy",
-                    use_relative_path=True,
-                    **job_kwargs,
-                )
-            # Generate spike interface report
-            if postprocessing_params.get("export_report", True):
-                si.exporters.export_report(
-                    sorting_analyzer=sorting_analyzer,
-                    output_folder=analyzer_output_dir / "spikeinterface_report",
-                    **job_kwargs,
-                )
-
         _sorting_analyzer_compute()
 
         self.insert1(
@@ -378,3 +362,103 @@ class PostProcessing(dj.Imported):
             {**key, "clustering_time": datetime.now(timezone.utc)},
             allow_direct_insert=True,
         )
+
+
+@schema
+class SIExport(dj.Computed):
+    """A SpikeInterface export report and to Phy"""
+
+    definition = """
+    -> PostProcessing
+    ---
+    execution_time: datetime
+    execution_duration: float
+    """
+
+    class File(dj.Part):
+        definition = """
+        -> master
+        file_name: varchar(255)
+        ---
+        file: filepath@ephys-processed
+        """
+
+    def make(self, key):
+        execution_time = datetime.now(timezone.utc)
+
+        clustering_method, output_dir, params = (
+            ephys.ClusteringTask * ephys.ClusteringParamSet & key
+        ).fetch1("clustering_method", "clustering_output_dir", "params")
+        output_dir = find_full_path(ephys.get_ephys_root_data_dir(), output_dir)
+        sorter_name = clustering_method.replace(".", "_")
+
+        postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
+
+        job_kwargs = postprocessing_params.get(
+            "job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"}
+        )
+
+        analyzer_output_dir = output_dir / sorter_name / "sorting_analyzer"
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
+        report_dir = analyzer_output_dir / "spikeinterface_report"
+        phy_dir = analyzer_output_dir / "phy"
+
+        @memoized_result(
+            uniqueness_dict=postprocessing_params,
+            output_directory=analyzer_output_dir / "phy",
+        )
+        def _export_to_phy():
+            # Save to phy format
+            si.exporters.export_to_phy(
+                sorting_analyzer=sorting_analyzer,
+                output_folder=analyzer_output_dir / "phy",
+                use_relative_path=True,
+                remove_if_exists=True,
+                **job_kwargs,
+            )
+
+        @memoized_result(
+            uniqueness_dict=postprocessing_params,
+            output_directory=analyzer_output_dir / "spikeinterface_report",
+        )
+        def _export_report():
+            # Generate spike interface report
+            si.exporters.export_report(
+                sorting_analyzer=sorting_analyzer,
+                output_folder=analyzer_output_dir / "spikeinterface_report",
+                **job_kwargs,
+            )
+
+        if (
+            postprocessing_params.get("export_report", False)
+            and not report_dir.exists()
+        ):
+            _export_report()
+        if postprocessing_params.get("export_to_phy", False) and not phy_dir.exists():
+            _export_to_phy()
+
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": (
+                    datetime.now(timezone.utc) - execution_time
+                ).total_seconds()
+                / 3600,
+            }
+        )
+
+        # Insert result files
+        for export_dir in (report_dir, phy_dir):
+            if export_dir.exists():
+                self.File.insert(
+                    [
+                        {
+                            **key,
+                            "file_name": f.relative_to(analyzer_output_dir).as_posix(),
+                            "file": f,
+                        }
+                        for f in export_dir.rglob("*")
+                        if f.is_file()
+                    ]
+                )
