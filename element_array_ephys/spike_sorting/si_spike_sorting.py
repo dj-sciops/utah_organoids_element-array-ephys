@@ -399,7 +399,6 @@ class SIExport(dj.Computed):
         )
 
         analyzer_output_dir = output_dir / sorter_name / "sorting_analyzer"
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
         report_dir = analyzer_output_dir / "spikeinterface_report"
         phy_dir = analyzer_output_dir / "phy"
 
@@ -429,12 +428,15 @@ class SIExport(dj.Computed):
                 **job_kwargs,
             )
 
+        # Run export functions if report or phy folders do not exist
         if (
             postprocessing_params.get("export_report", False)
             and not report_dir.exists()
         ):
+            sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
             _export_report()
         if postprocessing_params.get("export_to_phy", False) and not phy_dir.exists():
+            sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
             _export_to_phy()
 
         self.insert1(
