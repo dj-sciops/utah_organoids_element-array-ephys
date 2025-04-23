@@ -1,6 +1,7 @@
 import importlib
 import inspect
 import pathlib
+from datetime import timedelta, datetime, timezone
 
 import datajoint as dj
 import numpy as np
@@ -230,6 +231,7 @@ class LFP(dj.Imported):
     -> EphysSession
     ---
     lfp_sampling_rate    : float # Down-sampled sampling rate (Hz).
+    execution_duration   : float # execution duration in hours
     """
 
     class Trace(dj.Part):
@@ -250,6 +252,8 @@ class LFP(dj.Imported):
         )
 
     def make(self, key):
+        execution_time = datetime.now(timezone.utc)
+
         TARGET_SAMPLING_RATE = 2500  # Hz
         POWERLINE_NOISE_FREQ = 60  # Hz
         LFP_DURATION = 30  # minutes
@@ -385,6 +389,16 @@ class LFP(dj.Imported):
                         "lfp": lfp,
                     }
                 )
+
+        self.update1(
+            {
+                **key,
+                "execution_duration": (
+                    datetime.now(timezone.utc) - execution_time
+                ).total_seconds()
+                / 3600,
+            }
+        )
 
 
 # ------------ Clustering --------------
