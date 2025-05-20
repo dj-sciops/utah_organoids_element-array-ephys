@@ -254,151 +254,109 @@ class LFP(dj.Imported):
     def make(self, key):
         execution_time = datetime.now(timezone.utc)
 
-        TARGET_SAMPLING_RATE = 2500  # Hz
-        POWERLINE_NOISE_FREQ = 60  # Hz
-        LFP_DURATION = 30  # minutes
+        TARGET_SAMPLING_RATE = 2500 # Hz
+        POWERLINE_NOISE_FREQ = 60 # Hz
+        MAX_DURATION_MINUTES = 30 # Minutes
 
-        duration = (key["end_time"] - key["start_time"]).total_seconds() / 60  # minutes
-        assert (
-            duration <= LFP_DURATION
-        ), f"LFP sessions cannot exceeds {LFP_DURATION} minutes in duration."
+        duration = (key["end_time"] - key["start_time"]).total_seconds() / 60
+        assert duration <= MAX_DURATION_MINUTES, f"LFP duration {duration} min > {MAX_DURATION_MINUTES} min"
 
         query = (
             EphysRawFile
             & f"file_time BETWEEN '{key['start_time']}' AND '{key['end_time']}'"
         )
         if not query:
-            logger.info(
-                f"No raw data file found. Skip populating ephys.LFP for <{key}>"
-            )
-        else:
-            logger.info(f"Populating ephys.LFP for <{key}>")
+            logger.info(f"No raw data file found. Skipping LFP for <{key}>")
+            return
 
-            # Get probe info
-            probe_info = (EphysSessionProbe & key).fetch1()
-            probe_type = (probe.Probe & {"probe": probe_info["probe"]}).fetch1(
-                "probe_type"
-            )
+        logger.info(f"Populating ephys.LFP for <{key}>")
 
-            electrode_query = probe.ElectrodeConfig.Electrode & (
-                probe.ElectrodeConfig & {"probe_type": probe_type}
-            )
+        probe_info = (EphysSessionProbe & key).fetch1()
+        probe_type = (probe.Probe & {"probe": probe_info["probe"]}).fetch1("probe_type")
+        electrode_query = probe.ElectrodeConfig.Electrode & (probe.ElectrodeConfig & {"probe_type": probe_type})
 
-            # Filter for used electrodes. If probe_info["used_electrodes"] is None, it means all electrodes were used.
-            if probe_info["used_electrodes"]:
-                electrode_query &= (
-                    f'electrode IN {tuple(probe_info["used_electrodes"])}'
-                )
+        if probe_info["used_electrodes"]:
+            electrode_query &= f"electrode IN {tuple(probe_info['used_electrodes'])}"
 
-            header = {}
-            lfp_concat = np.array([], dtype=np.float64)
+        header = {}
+        lfp_concat = []
 
-            for file_relpath in query.fetch("file_path", order_by="file_time"):
-                file = find_full_path(get_ephys_root_data_dir(), file_relpath)
+        for file_relpath in query.fetch("file_path", order_by="file_time"):
+            file = find_full_path(get_ephys_root_data_dir(), file_relpath)
+            try:
+                data = intanrhdreader.load_file(file)
+            except OSError:
+                raise OSError(f"OS error occurred when loading file {file.name}")
 
-                try:
-                    data = intanrhdreader.load_file(file)
-                except OSError:
-                    raise OSError(f"OS error occurred when loading file {file.name}")
+            if not header:
+                header = data.pop("header")
+                lfp_sampling_rate = header["sample_rate"]
+                powerline_noise_freq = header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
+                downsample_factor = int(lfp_sampling_rate / TARGET_SAMPLING_RATE)
 
-                if not header:
-                    header = data.pop("header")
-                    lfp_sampling_rate = header["sample_rate"]
-                    powerline_noise_freq = (
-                        header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
-                    )  # in Hz
-                    downsample_factor = int(lfp_sampling_rate / TARGET_SAMPLING_RATE)
+                lfp_indices = np.array(electrode_query.fetch("channel_idx"), dtype=int)
+                port_indices = np.array([
+                    ind for ind, ch in enumerate(data["amplifier_channels"])
+                    if ch["port_prefix"] == probe_info["port_id"]
+                ])
+                lfp_indices = np.sort(port_indices[lfp_indices])
 
-                    # Get LFP indices (row index of the LFP matrix to be used)
-                    lfp_indices = np.array(
-                        electrode_query.fetch("channel_idx"), dtype=int
-                    )
-                    port_indices = np.array(
-                        [
-                            ind
-                            for ind, ch in enumerate(data["amplifier_channels"])
-                            if ch["port_prefix"] == probe_info["port_id"]
-                        ]
-                    )
-                    lfp_indices = np.sort(port_indices[lfp_indices])
+                self.insert1({**key, "lfp_sampling_rate": TARGET_SAMPLING_RATE})
 
-                    self.insert1(
-                        {
-                            **key,
-                            "lfp_sampling_rate": TARGET_SAMPLING_RATE,
-                        }
-                    )
+                channels = np.array([
+                    ch["native_channel_name"]
+                    for ch in data["amplifier_channels"]
+                    if ch["port_prefix"]
+                ])[lfp_indices]
 
-                    channels = np.array(
-                        [
-                            ch["native_channel_name"]
-                            for ch in data["amplifier_channels"]
-                            if ch["port_prefix"]
-                        ]
-                    )[lfp_indices]
+                electrode_df = electrode_query.fetch(format="frame").reset_index()
+                channel_to_electrode_map = dict(zip(electrode_df["channel_idx"], electrode_df["electrode"]))
+                channel_to_electrode_map = {
+                    f'{probe_info["port_id"]}-{int(channel):03d}': electrode
+                    for channel, electrode in channel_to_electrode_map.items()
+                }
+            lfps = data.pop("amplifier_data")[lfp_indices]
+            lfp_concat.append(lfps)
 
-                    electrode_df = electrode_query.fetch(format="frame").reset_index()
+        full_lfp = np.hstack(lfp_concat)
+        
+        # Check for missing files or short trace durations in min
 
-                    channel_to_electrode_map = dict(
-                        zip(electrode_df["channel_idx"], electrode_df["electrode"])
-                    )
+        trace_duration = full_lfp.shape[1] / lfp_sampling_rate / 60
+        if abs(trace_duration - duration) > 0.5:
+            raise ValueError(f"Trace duration mismatch: expected {duration}, got {trace_duration} min")
 
-                    channel_to_electrode_map = {
-                        f'{probe_info["port_id"]}-{int(channel):03d}': electrode
-                        for channel, electrode in channel_to_electrode_map.items()
-                    }
+        # Filter design at original fs
+        notch_b, notch_a = signal.iirnotch(w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate)
 
-                lfps = data.pop("amplifier_data")[lfp_indices]
-                lfp_concat = (
-                    lfps if lfp_concat.size == 0 else np.hstack((lfp_concat, lfps))
-                )
-                del data
+        lfp_filtered_all = []
 
-            # Check for missing files or short trace durations in min
-            trace_duration = lfp_concat.shape[1] / lfp_sampling_rate / 60  # in min
-            if trace_duration != duration:
-                raise ValueError(
-                    f"Trace length ({trace_duration} min) is less than session duration"
-                )
+        for ch_idx, raw_lfp in enumerate(full_lfp):
+            lfp = signal.filtfilt(notch_b, notch_a, raw_lfp)
+            lfp = signal.decimate(lfp, downsample_factor, ftype='fir', zero_phase=True)
+            lfp_filtered_all.append(lfp)
 
-            # Single insert in loop to mitigate potential memory issue.
-            for ch, lfp in zip(channels, lfp_concat):
-                # Powerline noise removal
-                b_notch, a_notch = signal.iirnotch(
-                    w0=powerline_noise_freq, Q=30, fs=TARGET_SAMPLING_RATE
-                )
-                lfp = signal.filtfilt(b_notch, a_notch, lfp)
+        stds = np.array([np.std(x) for x in lfp_filtered_all])
+        median_std = np.median(stds)
 
-                # Lowpass filter
-                b_butter, a_butter = signal.butter(
-                    N=4, Wn=1000, btype="lowpass", fs=TARGET_SAMPLING_RATE
-                )
-                lfp = signal.filtfilt(b_butter, a_butter, lfp)
+        for ch_idx, lfp in enumerate(lfp_filtered_all):
+            if np.isnan(lfp).any() or np.std(lfp) < 1e-6 or np.std(lfp) > 10 * median_std:
+                logger.warning(f"Skipping suspicious LFP on channel {ch_idx}")
+                continue
 
-                # Downsample the signal
-                lfp = lfp[::downsample_factor]
-
-                self.Trace.insert1(
-                    {
-                        **key,
-                        "electrode_config_hash": electrode_df["electrode_config_hash"][
-                            0
-                        ],
-                        "probe_type": electrode_df["probe_type"][0],
-                        "electrode": channel_to_electrode_map[ch],
-                        "lfp": lfp,
-                    }
-                )
-
-        self.update1(
-            {
+            self.Trace.insert1({
                 **key,
-                "execution_duration": (
-                    datetime.now(timezone.utc) - execution_time
-                ).total_seconds()
-                / 3600,
-            }
-        )
+                "electrode_config_hash": electrode_df["electrode_config_hash"][0],
+                "probe_type": electrode_df["probe_type"][0],
+                "electrode": channel_to_electrode_map[ch_idx],
+                "lfp": lfp,
+            })
+
+        self.update1({
+            **key,
+            "execution_duration": (datetime.now(timezone.utc) - execution_time).total_seconds() / 3600,
+        })
+
 
 
 # ------------ Clustering --------------
