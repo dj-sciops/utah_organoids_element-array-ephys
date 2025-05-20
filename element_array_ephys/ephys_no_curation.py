@@ -326,20 +326,42 @@ class LFP(dj.Imported):
         if abs(trace_duration - duration) > 0.5:
             raise ValueError(f"Trace duration mismatch: expected {duration}, got {trace_duration} min")
 
-        # Filter design at original fs
+        # --- Design notch filter to remove powerline noise ---
         notch_b, notch_a = signal.iirnotch(w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate)
 
+        # Prepare a list to store filtered and downsampled traces
         lfp_filtered_all = []
 
         for ch_idx, raw_lfp in enumerate(full_lfp):
+            # --- Step 1: Apply notch filter ---
+            # This removes periodic line noise that contaminates the LFP
+            # IIR notch is efficient and preserves signal elsewhere
             lfp = signal.filtfilt(notch_b, notch_a, raw_lfp)
+
+            # --- Step 2: Downsample the signal ---
+            # Use scipy.signal.decimate to:
+            #   - apply an anti-aliasing FIR filter
+            #   - reduce sampling rate from original (e.g., 20–30 kHz) to target (e.g., 2.5 kHz)
+            # This preserves LFP content < Nyquist (1250 Hz), and reduces data size
             lfp = signal.decimate(lfp, downsample_factor, ftype='fir', zero_phase=True)
+
+            # --- Step 3: Store for further processing and QC ---
             lfp_filtered_all.append(lfp)
 
+        # --- Sanity check for each filtered LFP trace ---
+        # Compute the standard deviation (STD) of each channel after filtering and downsampling
+        # This helps detect abnormal traces (e.g., dead channels, saturated signals, excessive noise)
+
         stds = np.array([np.std(x) for x in lfp_filtered_all])
+
+        # Use the median STD across all channels as a robust reference (less sensitive to outliers)
         median_std = np.median(stds)
 
         for ch_idx, lfp in enumerate(lfp_filtered_all):
+            # Reject the trace if:
+            # 1. It contains NaNs (e.g., from upstream artifacts or decoding failures)
+            # 2. The signal is nearly flat (STD < 1e-6 µV) — likely a dead or disconnected channel
+            # 3. The signal has extreme variance (STD > 10× median) — possibly noisy or corrupted
             if np.isnan(lfp).any() or np.std(lfp) < 1e-6 or np.std(lfp) > 10 * median_std:
                 logger.warning(f"Skipping suspicious LFP on channel {ch_idx}")
                 continue
