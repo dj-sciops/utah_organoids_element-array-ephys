@@ -254,12 +254,14 @@ class LFP(dj.Imported):
     def make(self, key):
         execution_time = datetime.now(timezone.utc)
 
-        TARGET_SAMPLING_RATE = 2500 # Hz
-        POWERLINE_NOISE_FREQ = 60 # Hz
-        MAX_DURATION_MINUTES = 30 # Minutes
+        TARGET_SAMPLING_RATE = 2500  # Hz
+        POWERLINE_NOISE_FREQ = 60  # Hz
+        MAX_DURATION_MINUTES = 30  # Minutes
 
         duration = (key["end_time"] - key["start_time"]).total_seconds() / 60
-        assert duration <= MAX_DURATION_MINUTES, f"LFP duration {duration} min > {MAX_DURATION_MINUTES} min"
+        assert (
+            duration <= MAX_DURATION_MINUTES
+        ), f"LFP duration {duration} min > {MAX_DURATION_MINUTES} min"
 
         query = (
             EphysRawFile
@@ -273,7 +275,9 @@ class LFP(dj.Imported):
 
         probe_info = (EphysSessionProbe & key).fetch1()
         probe_type = (probe.Probe & {"probe": probe_info["probe"]}).fetch1("probe_type")
-        electrode_query = probe.ElectrodeConfig.Electrode & (probe.ElectrodeConfig & {"probe_type": probe_type})
+        electrode_query = probe.ElectrodeConfig.Electrode & (
+            probe.ElectrodeConfig & {"probe_type": probe_type}
+        )
 
         if probe_info["used_electrodes"]:
             electrode_query &= f"electrode IN {tuple(probe_info['used_electrodes'])}"
@@ -291,26 +295,35 @@ class LFP(dj.Imported):
             if not header:
                 header = data.pop("header")
                 lfp_sampling_rate = header["sample_rate"]
-                powerline_noise_freq = header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
+                powerline_noise_freq = (
+                    header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
+                )
                 downsample_factor = int(lfp_sampling_rate / TARGET_SAMPLING_RATE)
 
                 lfp_indices = np.array(electrode_query.fetch("channel_idx"), dtype=int)
-                port_indices = np.array([
-                    ind for ind, ch in enumerate(data["amplifier_channels"])
-                    if ch["port_prefix"] == probe_info["port_id"]
-                ])
+                port_indices = np.array(
+                    [
+                        ind
+                        for ind, ch in enumerate(data["amplifier_channels"])
+                        if ch["port_prefix"] == probe_info["port_id"]
+                    ]
+                )
                 lfp_indices = np.sort(port_indices[lfp_indices])
 
                 self.insert1({**key, "lfp_sampling_rate": TARGET_SAMPLING_RATE})
 
-                channels = np.array([
-                    ch["native_channel_name"]
-                    for ch in data["amplifier_channels"]
-                    if ch["port_prefix"]
-                ])[lfp_indices]
+                channels = np.array(
+                    [
+                        ch["native_channel_name"]
+                        for ch in data["amplifier_channels"]
+                        if ch["port_prefix"]
+                    ]
+                )[lfp_indices]
 
                 electrode_df = electrode_query.fetch(format="frame").reset_index()
-                channel_to_electrode_map = dict(zip(electrode_df["channel_idx"], electrode_df["electrode"]))
+                channel_to_electrode_map = dict(
+                    zip(electrode_df["channel_idx"], electrode_df["electrode"])
+                )
                 channel_to_electrode_map = {
                     f'{probe_info["port_id"]}-{int(channel):03d}': electrode
                     for channel, electrode in channel_to_electrode_map.items()
@@ -319,15 +332,19 @@ class LFP(dj.Imported):
             lfp_concat.append(lfps)
 
         full_lfp = np.hstack(lfp_concat)
-        
+
         # Check for missing files or short trace durations in min
 
         trace_duration = full_lfp.shape[1] / lfp_sampling_rate / 60
         if abs(trace_duration - duration) > 0.5:
-            raise ValueError(f"Trace duration mismatch: expected {duration}, got {trace_duration} min")
+            raise ValueError(
+                f"Trace duration mismatch: expected {duration}, got {trace_duration} min"
+            )
 
         # --- Design notch filter to remove powerline noise ---
-        notch_b, notch_a = signal.iirnotch(w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate)
+        notch_b, notch_a = signal.iirnotch(
+            w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate
+        )
 
         # Prepare a list to store filtered and downsampled traces
         lfp_filtered_all = []
@@ -343,7 +360,7 @@ class LFP(dj.Imported):
             #   - apply an anti-aliasing FIR filter
             #   - reduce sampling rate from original (e.g., 20–30 kHz) to target (e.g., 2.5 kHz)
             # This preserves LFP content < Nyquist (1250 Hz), and reduces data size
-            lfp = signal.decimate(lfp, downsample_factor, ftype='fir', zero_phase=True)
+            lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
 
             # --- Step 3: Store for further processing and QC ---
             lfp_filtered_all.append(lfp)
@@ -362,23 +379,33 @@ class LFP(dj.Imported):
             # 1. It contains NaNs (e.g., from upstream artifacts or decoding failures)
             # 2. The signal is nearly flat (STD < 1e-6 µV) — likely a dead or disconnected channel
             # 3. The signal has extreme variance (STD > 10× median) — possibly noisy or corrupted
-            if np.isnan(lfp).any() or np.std(lfp) < 1e-6 or np.std(lfp) > 10 * median_std:
+            if (
+                np.isnan(lfp).any()
+                or np.std(lfp) < 1e-6
+                or np.std(lfp) > 10 * median_std
+            ):
                 logger.warning(f"Skipping suspicious LFP on channel {ch_idx}")
                 continue
 
-            self.Trace.insert1({
+            self.Trace.insert1(
+                {
+                    **key,
+                    "electrode_config_hash": electrode_df["electrode_config_hash"][0],
+                    "probe_type": electrode_df["probe_type"][0],
+                    "electrode": channel_to_electrode_map[ch_idx],
+                    "lfp": lfp,
+                }
+            )
+
+        self.update1(
+            {
                 **key,
-                "electrode_config_hash": electrode_df["electrode_config_hash"][0],
-                "probe_type": electrode_df["probe_type"][0],
-                "electrode": channel_to_electrode_map[ch_idx],
-                "lfp": lfp,
-            })
-
-        self.update1({
-            **key,
-            "execution_duration": (datetime.now(timezone.utc) - execution_time).total_seconds() / 3600,
-        })
-
+                "execution_duration": (
+                    datetime.now(timezone.utc) - execution_time
+                ).total_seconds()
+                / 3600,
+            }
+        )
 
 
 # ------------ Clustering --------------
