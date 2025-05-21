@@ -268,11 +268,7 @@ class LFP(dj.Imported):
             - Check for missing files or short trace durations in min
             - Design notch filter to remove powerline noise that contaminates the LFP
             - Downsample the signal with `decimate` to:
-                - apply an anti-aliasing FIR filter
-                - reduce sampling rate from original (e.g.,20 kHz) to target (e.g., 2.5 kHz)
-                - This preserves LFP content < Nyquist (1.25 kHz), and reduces data size
-            - Insert the filtered and downsampled LFP traces into the ephys.LFP.Trace table.
-            - Update the ephys.LFP table with the execution duration.
+                - apply an anti-aliasing FIR filter and downsample the signal
         """
         execution_time = datetime.now(timezone.utc)
 
