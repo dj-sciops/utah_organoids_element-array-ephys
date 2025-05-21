@@ -3,6 +3,11 @@
 Observes [Semantic Versioning](https://semver.org/spec/v2.0.0.html) standard and
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) convention.
 
+
+## [0.5.2] - 2025-05-21
+
+- Add - Major refactor and update methods in `ephys.LFP` processing  
+
 ## [0.5.1] - 2025-04-23
 
 - Add - `execution_duration` to `LFP` table
