@@ -252,17 +252,42 @@ class LFP(dj.Imported):
         )
 
     def make(self, key):
+        """Compute broadband LFP signals for each electrode.
+
+        Args:
+            key (dict): EphysSession primary key.
+
+        Raises:
+            ValueError: If the trace duration is not within the expected range.
+            OSError: If there is an error when loading the file.
+
+        Logic:
+            - Fetch the probe information for the given ephys session.
+            - Fetch the electrode configuration for the given probe.
+            - Fetch the raw data files for the given ephys session.
+            - Check for missing files or short trace durations in min
+            - Design notch filter to remove powerline noise that contaminates the LFP
+            - Downsample the signal with `decimate` to:
+                - apply an anti-aliasing FIR filter
+                - reduce sampling rate from original (e.g.,20 kHz) to target (e.g., 2.5 kHz)
+                - This preserves LFP content < Nyquist (1.25 kHz), and reduces data size
+            - Insert the filtered and downsampled LFP traces into the ephys.LFP.Trace table.
+            - Update the ephys.LFP table with the execution duration.
+        """
         execution_time = datetime.now(timezone.utc)
 
+        # Define constants
         TARGET_SAMPLING_RATE = 2500  # Hz
         POWERLINE_NOISE_FREQ = 60  # Hz
         MAX_DURATION_MINUTES = 30  # Minutes
 
-        duration = (key["end_time"] - key["start_time"]).total_seconds() / 60
+        # Check if the trace duration is within the expected range
+        duration = (key["end_time"] - key["start_time"]).total_seconds() / 60  # minutes
         assert (
             duration <= MAX_DURATION_MINUTES
-        ), f"LFP duration {duration} min > {MAX_DURATION_MINUTES} min"
+        ), f"LFP session duration {duration} min > max session duration {MAX_DURATION_MINUTES} min"
 
+        # Fetch the raw data files for the given ephys session
         query = (
             EphysRawFile
             & f"file_time BETWEEN '{key['start_time']}' AND '{key['end_time']}'"
@@ -273,18 +298,22 @@ class LFP(dj.Imported):
 
         logger.info(f"Populating ephys.LFP for <{key}>")
 
+        # Fetch the probe information for the given ephys session
         probe_info = (EphysSessionProbe & key).fetch1()
         probe_type = (probe.Probe & {"probe": probe_info["probe"]}).fetch1("probe_type")
         electrode_query = probe.ElectrodeConfig.Electrode & (
             probe.ElectrodeConfig & {"probe_type": probe_type}
         )
 
+        # Fetch the electrode configuration for the given probe
+        # Filter for used electrodes. If probe_info["used_electrodes"] is None, it means all electrodes were used.
         if probe_info["used_electrodes"]:
             electrode_query &= f"electrode IN {tuple(probe_info['used_electrodes'])}"
 
         header = {}
         lfp_concat = []
 
+        # Iterate over the raw data files for the given ephys session to load the data
         for file_relpath in query.fetch("file_path", order_by="file_time"):
             file = find_full_path(get_ephys_root_data_dir(), file_relpath)
             try:
@@ -297,9 +326,16 @@ class LFP(dj.Imported):
                 lfp_sampling_rate = header["sample_rate"]
                 powerline_noise_freq = (
                     header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
-                )
+                )  # in Hz
                 downsample_factor = int(lfp_sampling_rate / TARGET_SAMPLING_RATE)
 
+                # Check if the downsampling factor is exact
+                if lfp_sampling_rate % TARGET_SAMPLING_RATE != 0:
+                    raise ValueError(
+                        f"Inexact downsampling factor: {lfp_sampling_rate} Hz -> {TARGET_SAMPLING_RATE} Hz"
+                    )
+
+                # Get LFP indices (row index of the LFP matrix to be used)
                 lfp_indices = np.array(electrode_query.fetch("channel_idx"), dtype=int)
                 port_indices = np.array(
                     [
@@ -312,6 +348,7 @@ class LFP(dj.Imported):
 
                 self.insert1({**key, "lfp_sampling_rate": TARGET_SAMPLING_RATE})
 
+                # Get LFP channels
                 channels = np.array(
                     [
                         ch["native_channel_name"]
@@ -320,79 +357,49 @@ class LFP(dj.Imported):
                     ]
                 )[lfp_indices]
 
+                # Get channel to electrode mapping
                 electrode_df = electrode_query.fetch(format="frame").reset_index()
                 channel_to_electrode_map = dict(
                     zip(electrode_df["channel_idx"], electrode_df["electrode"])
                 )
-                channel_to_electrode_map = {
-                    f'{probe_info["port_id"]}-{int(channel):03d}': electrode
-                    for channel, electrode in channel_to_electrode_map.items()
-                }
+
+                # Get electrode ids
+                electrode_ids = [
+                    channel_to_electrode_map[f'{probe_info["port_id"]}-{int(ch):03d}']
+                    for ch in channels
+                ]
+
             lfps = data.pop("amplifier_data")[lfp_indices]
             lfp_concat.append(lfps)
 
         full_lfp = np.hstack(lfp_concat)
 
-        # Check for missing files or short trace durations in min
-
-        trace_duration = full_lfp.shape[1] / lfp_sampling_rate / 60
+        # Check if the trace duration is within the expected range
+        trace_duration = full_lfp.shape[1] / lfp_sampling_rate / 60  # in min
         if abs(trace_duration - duration) > 0.5:
             raise ValueError(
                 f"Trace duration mismatch: expected {duration}, got {trace_duration} min"
             )
 
-        # --- Design notch filter to remove powerline noise ---
+        # Design notch filter
         notch_b, notch_a = signal.iirnotch(
             w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate
         )
 
-        # Prepare a list to store filtered and downsampled traces
-        lfp_filtered_all = []
-
         for ch_idx, raw_lfp in enumerate(full_lfp):
-            # --- Step 1: Apply notch filter ---
-            # This removes periodic line noise that contaminates the LFP
-            # IIR notch is efficient and preserves signal elsewhere
+
+            # Apply notch filter
             lfp = signal.filtfilt(notch_b, notch_a, raw_lfp)
 
-            # --- Step 2: Downsample the signal ---
-            # Use scipy.signal.decimate to:
-            #   - apply an anti-aliasing FIR filter
-            #   - reduce sampling rate from original (e.g., 20–30 kHz) to target (e.g., 2.5 kHz)
-            # This preserves LFP content < Nyquist (1250 Hz), and reduces data size
+            # Downsample the signal with `decimate`
             lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
-
-            # --- Step 3: Store for further processing and QC ---
-            lfp_filtered_all.append(lfp)
-
-        # --- Sanity check for each filtered LFP trace ---
-        # Compute the standard deviation (STD) of each channel after filtering and downsampling
-        # This helps detect abnormal traces (e.g., dead channels, saturated signals, excessive noise)
-
-        stds = np.array([np.std(x) for x in lfp_filtered_all])
-
-        # Use the median STD across all channels as a robust reference (less sensitive to outliers)
-        median_std = np.median(stds)
-
-        for ch_idx, lfp in enumerate(lfp_filtered_all):
-            # Reject the trace if:
-            # 1. It contains NaNs (e.g., from upstream artifacts or decoding failures)
-            # 2. The signal is nearly flat (STD < 1e-6 µV) — likely a dead or disconnected channel
-            # 3. The signal has extreme variance (STD > 10× median) — possibly noisy or corrupted
-            if (
-                np.isnan(lfp).any()
-                or np.std(lfp) < 1e-6
-                or np.std(lfp) > 10 * median_std
-            ):
-                logger.warning(f"Skipping suspicious LFP on channel {ch_idx}")
-                continue
 
             self.Trace.insert1(
                 {
                     **key,
                     "electrode_config_hash": electrode_df["electrode_config_hash"][0],
                     "probe_type": electrode_df["probe_type"][0],
-                    "electrode": channel_to_electrode_map[ch_idx],
+                    "electrode": electrode_ids[ch_idx],
                     "lfp": lfp,
                 }
             )
