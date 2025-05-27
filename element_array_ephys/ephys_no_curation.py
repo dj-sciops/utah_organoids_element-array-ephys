@@ -355,11 +355,10 @@ class LFP(dj.Imported):
                     zip(electrode_df["channel_idx"], electrode_df["electrode"])
                 )
 
-                # Get electrode ids
-                electrode_ids = [
-                    channel_to_electrode_map[f'{probe_info["port_id"]}-{int(ch):03d}']
-                    for ch in channels
-                ]
+                channel_to_electrode_map = {
+                    f'{probe_info["port_id"]}-{int(channel):03d}': electrode
+                    for channel, electrode in channel_to_electrode_map.items()
+                }
 
             lfps = data.pop("amplifier_data")[lfp_indices]
             lfp_concat.append(lfps)
@@ -391,7 +390,7 @@ class LFP(dj.Imported):
                     **key,
                     "electrode_config_hash": electrode_df["electrode_config_hash"][0],
                     "probe_type": electrode_df["probe_type"][0],
-                    "electrode": electrode_ids[ch_idx],
+                    "electrode": channel_to_electrode_map[ch_idx],
                     "lfp": lfp,
                 }
             )
