@@ -323,9 +323,15 @@ class LFP(dj.Imported):
                     header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
                 )  # in Hz
 
-                downsample_factor = int(
-                    np.round(lfp_sampling_rate / TARGET_SAMPLING_RATE)
-                )
+                # Calculate downsampling factor
+                true_ratio = lfp_sampling_rate / TARGET_SAMPLING_RATE
+                downsample_factor = int(np.round(true_ratio))
+
+                # Check if the ratio is within 1% of an integer (1% tolerance)
+                if abs(true_ratio - downsample_factor) > 0.01:
+                    raise ValueError(
+                        f"Downsampling factor {true_ratio} is too far from an integer. Check LFP sampling rates."
+                    )
 
                 # Get LFP indices (row index of the LFP matrix to be used)
                 lfp_indices = np.array(electrode_query.fetch("channel_idx"), dtype=int)
