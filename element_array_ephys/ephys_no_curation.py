@@ -267,8 +267,7 @@ class LFP(dj.Imported):
             - Fetch the raw data files for the given ephys session.
             - Check for missing files or short trace durations in min
             - Design notch filter to remove powerline noise that contaminates the LFP
-            - Downsample the signal with `decimate` to:
-                - apply an anti-aliasing FIR filter and downsample the signal
+            - Downsample the signal with `decimate` and apply an anti-aliasing FIR filter 
         """
         execution_time = datetime.now(timezone.utc)
 
@@ -323,13 +322,8 @@ class LFP(dj.Imported):
                 powerline_noise_freq = (
                     header["notch_filter_frequency"] or POWERLINE_NOISE_FREQ
                 )  # in Hz
-                downsample_factor = int(lfp_sampling_rate / TARGET_SAMPLING_RATE)
-
-                # Check if the downsampling factor is exact
-                if lfp_sampling_rate % TARGET_SAMPLING_RATE != 0:
-                    raise ValueError(
-                        f"Inexact downsampling factor: {lfp_sampling_rate} Hz -> {TARGET_SAMPLING_RATE} Hz"
-                    )
+                
+                downsample_factor = int(np.round(lfp_sampling_rate / TARGET_SAMPLING_RATE))
 
                 # Get LFP indices (row index of the LFP matrix to be used)
                 lfp_indices = np.array(electrode_query.fetch("channel_idx"), dtype=int)
