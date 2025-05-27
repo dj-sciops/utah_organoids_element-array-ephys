@@ -239,7 +239,7 @@ class LFP(dj.Imported):
         -> master
         -> probe.ElectrodeConfig.Electrode
         ---
-        lfp              : blob@datajoint-blob
+        lfp              : blob@datajoint-blob # uV
         """
 
     @property
