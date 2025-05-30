@@ -4,9 +4,9 @@ Observes [Semantic Versioning](https://semver.org/spec/v2.0.0.html) standard and
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) convention.
 
 
-## [0.5.2] - 2025-05-21
+## [0.6.0] - 2025-05-31
 
-- Add - Major refactor and update methods in `ephys.LFP` processing  
+- Fix - Major refactor and fix methods in `ephys.LFP`  
 
 ## [0.5.1] - 2025-04-23
 
