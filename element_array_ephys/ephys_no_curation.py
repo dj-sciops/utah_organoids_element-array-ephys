@@ -328,7 +328,7 @@ class LFP(dj.Imported):
                 downsample_factor = int(np.round(true_ratio))
 
                 # Check if the ratio is within 1% of an integer (1% tolerance)
-                if abs(true_ratio - downsample_factor) > 0.01:
+                if not np.isclose(true_ratio, downsample_factor, rtol=0.01, atol=1e-8):
                     raise ValueError(
                         f"Downsampling factor {true_ratio} is too far from an integer. Check LFP sampling rates."
                     )
