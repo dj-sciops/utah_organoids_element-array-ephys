@@ -290,7 +290,7 @@ class LFP(dj.Imported):
         if not query:
             logger.info(f"No raw data file found. Skipping LFP for <{key}>")
             return
-
+        
         logger.info(f"Populating ephys.LFP for <{key}>")
 
         # Fetch the probe information for the given ephys session
@@ -303,8 +303,8 @@ class LFP(dj.Imported):
         # Fetch the electrode configuration for the given probe
         # Filter for used electrodes. If probe_info["used_electrodes"] is None, it means all electrodes were used.
         if probe_info["used_electrodes"]:
-            electrode_query &= f"electrode IN {tuple(probe_info['used_electrodes'])}"
-
+            electrode_query &= (f"electrode IN {tuple(probe_info['used_electrodes'])}")
+        
         header = {}
         lfp_concat = []
 
@@ -383,7 +383,7 @@ class LFP(dj.Imported):
             w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate
         )
 
-        for ch_idx, raw_lfp in enumerate(full_lfp):
+        for ch_idx, raw_lfp in zip(channels,full_lfp):
 
             # Apply notch filter
             lfp = signal.filtfilt(notch_b, notch_a, raw_lfp)
