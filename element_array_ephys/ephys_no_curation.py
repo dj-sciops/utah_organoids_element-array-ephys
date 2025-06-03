@@ -383,7 +383,7 @@ class LFP(dj.Imported):
             w0=powerline_noise_freq, Q=30, fs=lfp_sampling_rate
         )
 
-        for ch_idx, raw_lfp in enumerate(full_lfp):
+        for ch_idx, raw_lfp in zip(channels, full_lfp):
 
             # Apply notch filter
             lfp = signal.filtfilt(notch_b, notch_a, raw_lfp)
