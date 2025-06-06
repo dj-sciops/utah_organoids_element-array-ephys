@@ -395,9 +395,9 @@ class LFP(dj.Imported):
             lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
             all_lfps.append(lfp)
 
-        return all_lfps, electrode_df, channel_to_electrode_map, execution_time
+        return all_lfps, channels, electrode_df, channel_to_electrode_map, execution_time
 
-    def make_insert(self, key, all_lfps, electrode_df, channel_to_electrode_map, execution_time):
+    def make_insert(self, key, all_lfps, channels, electrode_df, channel_to_electrode_map, execution_time):
         self.insert1(
             {
                 **key,
