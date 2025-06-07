@@ -288,14 +288,30 @@ class LFP(dj.Imported):
             electrode_query &= f"electrode IN {tuple(probe_info['used_electrodes'])}"
 
         lfp_indices = np.array(electrode_query.fetch("channel_idx"), dtype=int)
-        
+
         electrode_df = electrode_query.fetch(format="frame").reset_index()
 
         file_paths = query.fetch("file_path", order_by="file_time")
 
-        return file_paths, lfp_indices, probe_info, electrode_df, execution_time
+        return (
+            file_paths,
+            lfp_indices,
+            probe_info,
+            electrode_df,
+            execution_time,
+            duration,
+        )
 
-    def make_compute(self, key, file_paths, lfp_indices, probe_info, electrode_df, execution_time):
+    def make_compute(
+        self,
+        key,
+        file_paths,
+        lfp_indices,
+        probe_info,
+        electrode_df,
+        execution_time,
+        duration,
+    ):
         """Compute broadband LFP signals for each electrode.
 
         Args:
@@ -395,9 +411,23 @@ class LFP(dj.Imported):
             lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
             all_lfps.append(lfp)
 
-        return all_lfps, channels, electrode_df, channel_to_electrode_map, execution_time
+        return (
+            all_lfps,
+            channels,
+            electrode_df,
+            channel_to_electrode_map,
+            execution_time,
+        )
 
-    def make_insert(self, key, all_lfps, channels, electrode_df, channel_to_electrode_map, execution_time):
+    def make_insert(
+        self,
+        key,
+        all_lfps,
+        channels,
+        electrode_df,
+        channel_to_electrode_map,
+        execution_time,
+    ):
         self.insert1(
             {
                 **key,
