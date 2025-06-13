@@ -256,8 +256,6 @@ class LFP(dj.Imported):
     MAX_DURATION_MINUTES = 30  # Minutes
 
     def make_fetch(self, key):
-        execution_time = datetime.now(timezone.utc)
-
         # Check if the trace duration is within the expected range
         duration = (key["end_time"] - key["start_time"]).total_seconds() / 60  # minutes
         assert (
@@ -298,7 +296,6 @@ class LFP(dj.Imported):
             lfp_indices,
             probe_info,
             electrode_df,
-            execution_time,
             duration,
         )
 
@@ -309,7 +306,6 @@ class LFP(dj.Imported):
         lfp_indices,
         probe_info,
         electrode_df,
-        execution_time,
         duration,
     ):
         """Compute broadband LFP signals for each electrode.
@@ -329,6 +325,8 @@ class LFP(dj.Imported):
             - Design notch filter to remove powerline noise that contaminates the LFP
             - Downsample the signal with `decimate` and apply an anti-aliasing FIR filter
         """
+        execution_time = datetime.now(timezone.utc)
+
         header = {}
         lfp_concat = []
         # Iterate over the raw data files for the given ephys session to load the data
@@ -410,13 +408,17 @@ class LFP(dj.Imported):
             # Downsample the signal with `decimate`
             lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
             all_lfps.append(lfp)
-
+            
+        execution_duration = ((
+                    datetime.now(timezone.utc) - execution_time
+                ).total_seconds()
+                / 3600)
         return (
             all_lfps,
             channels,
             electrode_df,
             channel_to_electrode_map,
-            execution_time,
+            execution_duration,
         )
 
     def make_insert(
@@ -426,16 +428,13 @@ class LFP(dj.Imported):
         channels,
         electrode_df,
         channel_to_electrode_map,
-        execution_time,
+        execution_duration,
     ):
         self.insert1(
             {
                 **key,
                 "lfp_sampling_rate": self.TARGET_SAMPLING_RATE,
-                "execution_duration": (
-                    datetime.now(timezone.utc) - execution_time
-                ).total_seconds()
-                / 3600,
+                "execution_duration": execution_duration,
             }
         )
 
