@@ -146,7 +146,7 @@ class PreProcessing(dj.Imported):
         from spikeinterface.extractors.extractor_classes import (
             recording_extractor_full_dict,
         )
-        
+
         acq_key = acq_software.replace(" ", "").lower()
         try:
             si_extractor = recording_extractor_full_dict[acq_key]
@@ -163,13 +163,13 @@ class PreProcessing(dj.Imported):
         first_file_path = find_full_path(ephys.get_ephys_root_data_dir(), files[0])
         available_streams = si_extractor.get_streams(first_file_path)[0]
         amplifier_streams = [s for s in available_streams if "amplifier" in s.lower()]
-        
+
         if not amplifier_streams:
             raise ValueError(
                 f"No amplifier stream found in {first_file_path}. "
                 f"Available streams: {available_streams}"
             )
-        
+
         stream_name = amplifier_streams[0]
 
         # Read data. Concatenate if multiple files are found.
@@ -180,11 +180,13 @@ class PreProcessing(dj.Imported):
             if not si_recording:
                 si_recording = si_extractor(file_path, stream_name=stream_name)
             else:
-                si_recording = si.concatenate_recordings([
-                    si_recording,
-                    si_extractor(file_path, stream_name=stream_name),
-                ])
-        
+                si_recording = si.concatenate_recordings(
+                    [
+                        si_recording,
+                        si_extractor(file_path, stream_name=stream_name),
+                    ]
+                )
+
         # Restrict to channels from the target port
         si_recording = si_recording.channel_slice(
             si_recording.channel_ids[port_indices]
@@ -201,7 +203,9 @@ class PreProcessing(dj.Imported):
                 f"{probe_info['port_id']}-{electrodes_df.channel_idx.iloc[elec]:03d}"
                 for elec in unused_electrodes
             ]
-            si_recording = si_recording.remove_channels(remove_channel_ids=chn_ids_to_remove)
+            si_recording = si_recording.remove_channels(
+                remove_channel_ids=chn_ids_to_remove
+            )
 
         # Preprocess
         si_preproc_func = getattr(si_preprocessing, params["SI_PREPROCESSING_METHOD"])
