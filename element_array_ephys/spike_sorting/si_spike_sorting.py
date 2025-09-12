@@ -188,7 +188,7 @@ class PreProcessing(dj.Imported):
                 )
 
         # Restrict to channels from the target port
-        si_recording = si_recording.channel_slice(
+        si_recording = si_recording.select_channels(
             si_recording.channel_ids[port_indices]
         )
 
