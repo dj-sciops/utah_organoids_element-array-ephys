@@ -408,11 +408,10 @@ class LFP(dj.Imported):
             # Downsample the signal with `decimate`
             lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
             all_lfps.append(lfp)
-            
-        execution_duration = ((
-                    datetime.now(timezone.utc) - execution_time
-                ).total_seconds()
-                / 3600)
+
+        execution_duration = (
+            datetime.now(timezone.utc) - execution_time
+        ).total_seconds() / 3600
         return (
             all_lfps,
             channels,
