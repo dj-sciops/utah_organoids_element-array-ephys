@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "element-array-ephys"
+dynamic = ["version"]
+description = "Extracellular Array Electrophysiology DataJoint Element"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "DataJoint", email = "info@datajoint.com"}
+]
+maintainers = [
+    {name = "DataJoint", email = "info@datajoint.com"}
+]
+keywords = ["neuroscience", "electrophysiology", "science", "datajoint"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+requires-python = ">=3.7,<3.11"
+dependencies = [
+    "datajoint>=0.13.0",
+    "ipykernel>=6.0.1",
+    "ipywidgets",
+    "openpyxl",
+    "plotly",
+    "seaborn",
+    "spikeinterface @ git+https://github.com/SpikeInterface/spikeinterface.git",
+    "spython",
+    "cuda-python",
+    "scikit-image",
+    "nbformat>=4.2.0",
+    "pyopenephys>=1.1.6",
+    "element-interface @ git+https://github.com/datajoint/element-interface.git@dev_memoized_results",
+    "numba",
+]
+
+[project.optional-dependencies]
+elements = [
+    "element-animal @ git+https://github.com/datajoint/element-animal.git",
+    "element-event @ git+https://github.com/datajoint/element-event.git",
+    "element-lab @ git+https://github.com/datajoint/element-lab.git",
+    "element-session @ git+https://github.com/datajoint/element-session.git",
+]
+nwb = [
+    "dandi",
+    "neuroconv[ecephys]",
+    "pynwb",
+]
+tests = [
+    "pre-commit",
+    "pytest",
+    "pytest-cov",
+]
+spykingcircus = [
+    "hdbscan",
+]
+
+[project.urls]
+Homepage = "https://github.com/datajoint/element-array-ephys"
+Repository = "https://github.com/datajoint/element-array-ephys"
+Documentation = "https://github.com/datajoint/element-array-ephys"
+"Bug Tracker" = "https://github.com/datajoint/element-array-ephys/issues"
+
+[tool.setuptools]
+packages = ["element_array_ephys"]
+
+[tool.setuptools.package-data]
+"element_array_ephys" = ["export/nwb/requirements.txt"]
+
+[tool.setuptools.dynamic]
+version = {attr = "element_array_ephys.version.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=element_array_ephys",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+
+[tool.coverage.run]
+source = ["element_array_ephys"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
