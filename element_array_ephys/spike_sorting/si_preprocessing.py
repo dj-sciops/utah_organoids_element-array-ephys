@@ -1,6 +1,4 @@
 import spikeinterface as si
-from spikeinterface import preprocessing
-
 
 def CatGT(recording):
     recording = si.preprocessing.phase_shift(recording)
