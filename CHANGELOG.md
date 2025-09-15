@@ -3,6 +3,10 @@
 Observes [Semantic Versioning](https://semver.org/spec/v2.0.0.html) standard and
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) convention.
 
+## [0.6.2] - 2025-09-15
+
+- Fix - Convert unsigned to signed in `organoid_preprocessing` for SI v.0.103+
+
 ## [0.6.1] - 2025-06-04
 
 - Fix - Use Spikeinterface official released versions
