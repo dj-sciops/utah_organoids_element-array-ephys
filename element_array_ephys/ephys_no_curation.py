@@ -148,6 +148,17 @@ def map_channel_to_electrode(probe_type="A1x32-6mm-100-177-H32_21mm", input_indi
 
     electrode_ids = lookup[input_indices]
     return electrode_ids
+
+def get_probe_type(ephys_key):
+    """
+    Gets the probe type for a given ephys session key. EphysSessionProbe needs an entry along with the EphysSession for ephys_key
+    """
+    probe_type = set((EphysSessionProbe * probe.Probe & ephys_key).fetch('probe_type'))
+    if len(probe_type) != 1:
+        raise ValueError(
+            f"Couldn't identify probe type for {ephys_key} - expected one, found {len(probe_type)}"
+        )
+    return probe_type.pop()
 # ----------------------------- Table declarations ----------------------
 
 
