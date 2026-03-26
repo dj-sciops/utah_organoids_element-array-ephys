@@ -9,9 +9,6 @@ import pandas as pd
 from element_interface.utils import dict_to_uuid, find_full_path, find_root_directory
 from scipy import signal
 import intanrhdreader
-import neo
-import quantities as pq
-from elephant.spike_train_correlation import spike_time_tiling_coefficient
 
 from . import ephys_report, probe
 from .readers import kilosort, openephys, spikeglx
@@ -132,8 +129,23 @@ def map_channel_to_electrode(probe_type="A1x32-6mm-100-177-H32_21mm", input_indi
     """
 
     # get electrode and channel info
-    num_electrodes = len(probe.ProbeType.Electrode & f"probe_type='{probe_type}'")
-    electrode_mapping, channel_mapping = probe.ElectrodeConfig.Electrode.fetch("electrode", "channel_idx")
+    # probe_type is part of ElectrodeConfig.Electrode's PK via -> ProbeType.Electrode
+    num_electrodes = len(probe.ProbeType.Electrode & {"probe_type": probe_type})
+    electrode_mapping, channel_mapping = (
+        probe.ElectrodeConfig.Electrode & {"probe_type": probe_type}
+    ).fetch("electrode", "channel_idx")
+
+    # multiple electrode configs may exist for the same probe_type;
+    # deduplicate unique (electrode, channel_idx) pairs and raise if they conflict
+    pairs = np.unique(np.column_stack([electrode_mapping, channel_mapping]), axis=0)
+    if len(pairs) != len(np.unique(pairs[:, 0])):
+        raise ValueError(
+            f"Conflicting channel-electrode mappings found for probe_type='{probe_type}'. "
+            "Multiple electrode configurations exist with inconsistent channel assignments. "
+            "Cannot determine a unique mapping."
+        )
+    electrode_mapping = pairs[:, 0]
+    channel_mapping = pairs[:, 1]
 
     # create lookup to convert
     lookup = np.empty(num_electrodes, dtype=int)
@@ -428,24 +440,25 @@ class LFP(dj.Imported):
 
             # account for boundaries
             fs = header["sample_rate"]
-            if file_relpath == file_paths[0]:
+            start_idx = 0
+            end_idx = lfps.shape[1]
+
+            is_first_file = file_relpath == file_paths[0]
+            is_last_file = file_relpath == file_paths[-1]
+
+            if is_first_file or is_last_file:
+                # parse file_start once; applies to both boundary conditions
                 file_start = datetime.strptime(
                     "_".join(file_relpath.split("_")[3:5]).removesuffix(".rhd"),
                     "%y%m%d_%H%M%S",
                 )
-                start_idx = int((key['start_time'] - file_start).total_seconds() * fs)
+                if is_first_file:
+                    start_idx = int((key['start_time'] - file_start).total_seconds() * fs)
+                if is_last_file:
+                    end_idx = int((key['end_time'] - file_start).total_seconds() * fs)
 
-                # trim lfps to start boundary
-                lfps = lfps[:, start_idx:]
-            elif file_relpath == file_paths[-1]:
-                file_start = datetime.strptime(
-                    "_".join(file_relpath.split("_")[3:5]).removesuffix(".rhd"),
-                    "%y%m%d_%H%M%S",
-                )
-                end_idx = int((key['end_time'] - file_start).total_seconds() * fs)
-
-                # trim lfps to end boundary
-                lfps = lfps[:, :end_idx]            
+            # trim lfps to session boundaries (handles single-file and multi-file sessions)
+            lfps = lfps[:, start_idx:end_idx]
 
             lfp_concat.append(lfps)
 
@@ -552,13 +565,12 @@ class ImpedanceMeasurements(dj.Imported):
         amplifier_channels = data['header'].pop("amplifier_channels")
 
         # Figure out `Port ID` from the existing EphysSessionProbe
-        port_id = set((EphysSessionProbe & key).fetch("port_id"))
-
-        # Figure out `Port ID` from the existing EphysSession
         if not (EphysSessionProbe & key):
             raise ValueError(
                 f"No EphysSessionProbe found for the {key} - cannot determine the port ID"
             )
+
+        port_id = set((EphysSessionProbe & key).fetch("port_id"))
 
         # Check if there are multiple port IDs for the same experiment, if so, it needs to be fixed in the EphysSessionProbe table
         if len(port_id) > 1:
@@ -1268,9 +1280,12 @@ class STTC(dj.Computed):
     """
 
     def make(self, key):
+        import neo
+        import quantities as pq
+        from elephant.spike_train_correlation import spike_time_tiling_coefficient
 
         # define parameters
-        dt = 20 # ms    
+        dt = 20 # ms
 
         # fetch spike times for all units in the clustering
         unit_ids, spike_times = (CuratedClustering.Unit & key).fetch('unit', 'spike_times', order_by='unit')
@@ -1278,7 +1293,7 @@ class STTC(dj.Computed):
         num_units = len(unit_ids)
         t_stop = (key['end_time'] - key['start_time']) / timedelta(milliseconds=1)  # in ms
 
-        # REMOVE LATER
+        # clip spike times to session duration to guard against edge-case spikes beyond end_time
         spike_times = np.array([st[st <= (key['end_time'] - key['start_time']).total_seconds()] for st in spike_times], dtype=object)
 
         # loop through unit pairs and calculate STTC
