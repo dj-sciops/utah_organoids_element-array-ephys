@@ -135,6 +135,12 @@ def map_channel_to_electrode(probe_type="A1x32-6mm-100-177-H32_21mm", input_indi
         probe.ElectrodeConfig.Electrode & {"probe_type": probe_type}
     ).fetch("electrode", "channel_idx")
 
+    if len(electrode_mapping) == 0:
+        raise ValueError(
+            f"No electrode configuration found for probe_type='{probe_type}'. "
+            "Ensure an ElectrodeConfig has been inserted for this probe type."
+        )
+
     # multiple electrode configs may exist for the same probe_type;
     # deduplicate unique (electrode, channel_idx) pairs and raise if they conflict
     pairs = np.unique(np.column_stack([electrode_mapping, channel_mapping]), axis=0)
@@ -147,8 +153,8 @@ def map_channel_to_electrode(probe_type="A1x32-6mm-100-177-H32_21mm", input_indi
     electrode_mapping = pairs[:, 0]
     channel_mapping = pairs[:, 1]
 
-    # create lookup to convert
-    lookup = np.empty(num_electrodes, dtype=int)
+    # create lookup to convert; -1 marks indices not covered by this config
+    lookup = np.full(num_electrodes, -1, dtype=int)
     if electrode_to_channel:
         lookup[electrode_mapping] = channel_mapping
     else:
