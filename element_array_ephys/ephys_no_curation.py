@@ -115,16 +115,21 @@ def get_processed_root_data_dir() -> str:
     else:
         return get_ephys_root_data_dir()[0]
 
-def map_channel_to_electrode(probe_type="A1x32-6mm-100-177-H32_21mm", input_indices=None, electrode_to_channel=False):
+
+def map_channel_to_electrode(
+    probe_type="A1x32-6mm-100-177-H32_21mm",
+    input_indices=None,
+    electrode_to_channel=False,
+):
     """
     Maps channel indices from recording controller to specific probe geometry as defined in probe.ElectrodeConfig.Electrode.
 
     Args:
         probe_type (str): Name of the probe used in the recording session. See probe.ProbeType() for inserted probes.
         electrode_to_channel (bool): If True, maps from electrode indices to channel indices. If False, maps from channel indices to electrode indices. Default is False.
-    
+
     Returns:
-        electrodes (array-like): Array of electrode indices corresponding to the input channel indices. 
+        electrodes (array-like): Array of electrode indices corresponding to the input channel indices.
             If electrode_to_channel is False, the output will be electrode indices. If electrode_to_channel is True, the output will be channel indices.
     """
 
@@ -167,16 +172,19 @@ def map_channel_to_electrode(probe_type="A1x32-6mm-100-177-H32_21mm", input_indi
     electrode_ids = lookup[input_indices]
     return electrode_ids
 
+
 def get_probe_type(ephys_key):
     """
     Gets the probe type for a given ephys session key. EphysSessionProbe needs an entry along with the EphysSession for ephys_key
     """
-    probe_type = set((EphysSessionProbe * probe.Probe & ephys_key).fetch('probe_type'))
+    probe_type = set((EphysSessionProbe * probe.Probe & ephys_key).fetch("probe_type"))
     if len(probe_type) != 1:
         raise ValueError(
             f"Couldn't identify probe type for {ephys_key} - expected one, found {len(probe_type)}"
         )
     return probe_type.pop()
+
+
 # ----------------------------- Table declarations ----------------------
 
 
@@ -212,6 +220,7 @@ class EphysRawFile(dj.Manual):
     parent_folder     : varchar(128) #  parent folder containing the file
     filename_prefix   : varchar(64)  #  filename prefix, if any, excluding the datetime information
     """
+
 
 @schema
 class EphysSession(dj.Manual):
@@ -283,6 +292,7 @@ class EphysSessionInfo(dj.Imported):
                 }
             ]
         )
+
 
 @schema
 class LFP(dj.Imported):
@@ -459,9 +469,11 @@ class LFP(dj.Imported):
                     "%y%m%d_%H%M%S",
                 )
                 if is_first_file:
-                    start_idx = int((key['start_time'] - file_start).total_seconds() * fs)
+                    start_idx = int(
+                        (key["start_time"] - file_start).total_seconds() * fs
+                    )
                 if is_last_file:
-                    end_idx = int((key['end_time'] - file_start).total_seconds() * fs)
+                    end_idx = int((key["end_time"] - file_start).total_seconds() * fs)
 
             # trim lfps to session boundaries (handles single-file and multi-file sessions)
             lfps = lfps[:, start_idx:end_idx]
@@ -490,11 +502,10 @@ class LFP(dj.Imported):
             # Downsample the signal with `decimate`
             lfp = signal.decimate(lfp, downsample_factor, ftype="fir", zero_phase=True)
             all_lfps.append(lfp)
-            
-        execution_duration = ((
-                    datetime.now(timezone.utc) - execution_time
-                ).total_seconds()
-                / 3600)
+
+        execution_duration = (
+            datetime.now(timezone.utc) - execution_time
+        ).total_seconds() / 3600
         return (
             all_lfps,
             channels,
@@ -531,12 +542,14 @@ class LFP(dj.Imported):
                 }
             )
 
+
 @schema
 class ImpedanceFile(dj.Manual):
     definition = """ # Insert files and organoid_id for impedance measurements
     -> ephys.EphysRawFile
     organoid_id        : varchar(4) # e.g. O17
     """
+
 
 @schema
 class ImpedanceMeasurements(dj.Imported):
@@ -568,7 +581,7 @@ class ImpedanceMeasurements(dj.Imported):
             raise OSError(f"OS error occurred when loading file {file.name}")
 
         # extract amplifier channels
-        amplifier_channels = data['header'].pop("amplifier_channels")
+        amplifier_channels = data["header"].pop("amplifier_channels")
 
         # Figure out `Port ID` from the existing EphysSessionProbe
         if not (EphysSessionProbe & key):
@@ -586,7 +599,11 @@ class ImpedanceMeasurements(dj.Imported):
         port_id = port_id.pop()
 
         # get channels for the correct port
-        port_channels = [channel for channel in amplifier_channels if channel['port_prefix'] == port_id]
+        port_channels = [
+            channel
+            for channel in amplifier_channels
+            if channel["port_prefix"] == port_id
+        ]
 
         # insert into master
         self.insert1(
@@ -599,10 +616,10 @@ class ImpedanceMeasurements(dj.Imported):
         # loop through channels and insert impedance data
         for channel in port_channels:
 
-            channel_idx = channel['custom_order']
-            channel_id = channel['custom_channel_name']
-            impedance_magnitude = channel['electrode_impedance_magnitude']
-            impedance_phase = channel['electrode_impedance_phase']
+            channel_idx = channel["custom_order"]
+            channel_id = channel["custom_channel_name"]
+            impedance_magnitude = channel["electrode_impedance_magnitude"]
+            impedance_phase = channel["electrode_impedance_phase"]
 
             self.Channel.insert1(
                 {
@@ -613,6 +630,8 @@ class ImpedanceMeasurements(dj.Imported):
                     "impedance_phase": impedance_phase,
                 }
             )
+
+
 # ------------ Clustering --------------
 
 
@@ -1266,9 +1285,12 @@ class QualityMetrics(dj.Imported):
         self.Cluster.insert(metrics_list, ignore_extra_fields=True)
         self.Waveform.insert(metrics_list, ignore_extra_fields=True)
 
+
 """
 Functional Connectivity (STTC)
 """
+
+
 @schema
 class STTC(dj.Computed):
     """
@@ -1291,43 +1313,61 @@ class STTC(dj.Computed):
         from elephant.spike_train_correlation import spike_time_tiling_coefficient
 
         # define parameters
-        dt = 20 # ms
+        dt = 20  # ms
 
         # fetch spike times for all units in the clustering
-        unit_ids, spike_times = (CuratedClustering.Unit & key).fetch('unit', 'spike_times', order_by='unit')
+        unit_ids, spike_times = (CuratedClustering.Unit & key).fetch(
+            "unit", "spike_times", order_by="unit"
+        )
 
         num_units = len(unit_ids)
-        t_stop = (key['end_time'] - key['start_time']) / timedelta(milliseconds=1)  # in ms
+        t_stop = (key["end_time"] - key["start_time"]) / timedelta(
+            milliseconds=1
+        )  # in ms
 
         # clip spike times to session duration to guard against edge-case spikes beyond end_time
-        spike_times = np.array([st[st <= (key['end_time'] - key['start_time']).total_seconds()] for st in spike_times], dtype=object)
+        spike_times = np.array(
+            [
+                st[st <= (key["end_time"] - key["start_time"]).total_seconds()]
+                for st in spike_times
+            ],
+            dtype=object,
+        )
 
         # loop through unit pairs and calculate STTC
         for i in range(num_units - 1):
             for j in range(i + 1, num_units):
 
                 # get spike times (convert from seconds to miliseconds)
-                spikes_A = (spike_times[i] * (timedelta(seconds=1) / timedelta(milliseconds=1))).astype(int)  
-                spikes_B = (spike_times[j] * (timedelta(seconds=1) / timedelta(milliseconds=1))).astype(int)  
+                spikes_A = (
+                    spike_times[i] * (timedelta(seconds=1) / timedelta(milliseconds=1))
+                ).astype(int)
+                spikes_B = (
+                    spike_times[j] * (timedelta(seconds=1) / timedelta(milliseconds=1))
+                ).astype(int)
 
                 # convert to spike trains (neo)
-                spiketrain_A = neo.SpikeTrain(spikes_A, units='ms', t_stop=t_stop)
-                spiketrain_B = neo.SpikeTrain(spikes_B, units='ms', t_stop=t_stop)
+                spiketrain_A = neo.SpikeTrain(spikes_A, units="ms", t_stop=t_stop)
+                spiketrain_B = neo.SpikeTrain(spikes_B, units="ms", t_stop=t_stop)
 
                 # calculate STTC
-                sttc = spike_time_tiling_coefficient(spiketrain_A, spiketrain_B, dt=dt*pq.ms)
+                sttc = spike_time_tiling_coefficient(
+                    spiketrain_A, spiketrain_B, dt=dt * pq.ms
+                )
 
                 # calculate spike time latencies
                 diff_matrix = np.abs(np.subtract.outer(spikes_A, spikes_B))
-                closest_spikes = np.min(diff_matrix, axis=1) # closest spike in B for each spike in A
+                closest_spikes = np.min(
+                    diff_matrix, axis=1
+                )  # closest spike in B for each spike in A
                 spike_time_latencies = closest_spikes[closest_spikes <= dt]
 
                 self.insert1(
                     {
                         **key,
-                        'unit_a': unit_ids[i],
-                        'unit_b': unit_ids[j],
-                        'sttc': sttc,
-                        'spike_time_latencies': spike_time_latencies,
+                        "unit_a": unit_ids[i],
+                        "unit_b": unit_ids[j],
+                        "sttc": sttc,
+                        "spike_time_latencies": spike_time_latencies,
                     }
                 )
