@@ -170,6 +170,16 @@ def map_channel_to_electrode(
         input_indices = np.arange(num_electrodes)
 
     electrode_ids = lookup[input_indices]
+
+    # guard: any -1 means input_indices contained a channel not in ElectrodeConfig
+    invalid_mask = electrode_ids == -1
+    if invalid_mask.any():
+        raise ValueError(
+            f"{invalid_mask.sum()} channel(s) have no electrode mapping for "
+            f"probe_type='{probe_type}': indices {input_indices[invalid_mask].tolist()}. "
+            "Ensure ElectrodeConfig.Electrode is fully populated for this probe type."
+        )
+
     return electrode_ids
 
 
